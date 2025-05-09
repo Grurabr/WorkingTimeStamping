@@ -403,6 +403,7 @@ class CSVViewer(QMainWindow):
         self.table_container = QVBoxLayout()
         self.table_container.addLayout(self.date_nav_layout)
         self.table_container.addWidget(self.table)
+        self.table.cellChanged.connect(self.handle_table_edit)
         self.main_layout.addLayout(self.select_layout)
         self.main_layout.addLayout(self.table_container)
 
@@ -441,22 +442,47 @@ class CSVViewer(QMainWindow):
             elif valinta == "table":
                 self.tulosta_taulusta()
 
+    def handle_table_edit(self, row, column):
+        if not self.table.item(row, column):
+            return
+
+        new_value = self.table.item(row, column).text()
+
+        # Найти ключ, соответствующий колонке
+        header = self.table.horizontalHeaderItem(column).text()
+        allheaders = [self.table.horizontalHeaderItem(i).text() for i in range(self.table.columnCount())]
+        filtered_headers = [h for h in allheaders if h != header]
+
+        try:
+            table_row_data = {
+                h: self.table.item(row, allheaders.index(h)).text()
+                for h in filtered_headers
+            }
+
+            person_number = table_row_data.get("Person_number")
+
+            for record in self.filtered_data:
+                if record.get("Person_number") != person_number:
+                    continue
+
+                match = True
+                for key in filtered_headers:
+                    if str(record.get(key, "")).strip() != table_row_data[key].strip():
+                        match = False
+                        break
+
+                if match:
+                    record[header] = new_value
+                    break
 
 
-
-    def get_column_index(self, header_name):
-        for i in range(self.table.columnCount()):
-            if self.table.horizontalHeaderItem(i).text() == header_name:
-                return i
-        return -1
+        except Exception as e:
+            print(f"Muokkausvirhe: {e}")
 
 
     def analysointi_dialog(self):
-        persons = []
-        for index in range(self.select_menu.count()):
-            person_text = self.select_menu.itemText(index)
-            persons.append(person_text)
-        dialog = AnalysointiDialog(persons, self)
+
+        dialog = AnalysointiDialog(self.kaikki_tyontekijat, self)
         if dialog.exec_():
             person, start_dat, end_dat = dialog.get_data()
             self.analysointi(person, start_dat, end_dat)
@@ -481,11 +507,15 @@ class CSVViewer(QMainWindow):
                 if not (start <= dt.date() <= end):
                     continue
 
-                hours = float(day['TimeStamp_hours'].replace(',', '.'))
+                #hours = float(day['TimeStamp_hours'].replace(',', '.'))
 
-                year, week_num, _ = dt.isocalendar()
-                key = (year, week_num)
-                weekly_hours[key] += hours
+                value = day['TimeStamp_hours'].replace(',', '.')
+                if value.replace('.', '', 1).isdigit():
+                    hours = float(value)
+
+                    year, week_num, _ = dt.isocalendar()
+                    key = (year, week_num)
+                    weekly_hours[key] += hours
 
 
 
@@ -537,11 +567,9 @@ class CSVViewer(QMainWindow):
 
             current = week_end + timedelta(days=1)
 
-
         if persons == "Kaikki":
-            added_persons = self.all_persons_in_data()
 
-            for person in added_persons:
+            for person in self.kaikki_tyontekijat:
                 kasittely(person)
         else:
             kasittely(persons)
@@ -805,6 +833,7 @@ class CSVViewer(QMainWindow):
         self.select_menu.blockSignals(False)
 
     def filter_by_person(self, person):
+        self.table.cellChanged.disconnect(self.handle_table_edit)
         if person == "Kaikki":
             all_records = self.filtered_data
         else:
@@ -813,8 +842,11 @@ class CSVViewer(QMainWindow):
         all_records.sort(key=lambda record: int(record.get("Person_number", 0)))
 
         self.display_data(all_records)
+        self.table.cellChanged.connect(self.handle_table_edit)
+
 
     def filter_by_date(self, value):
+        self.table.cellChanged.disconnect(self.handle_table_edit)
         person = self.select_menu.currentText()
 
         if person == "Kaikki":
@@ -826,6 +858,7 @@ class CSVViewer(QMainWindow):
 
         if value == "Kaikki ajanjaksot":
             self.display_data(all_records)
+            self.table.cellChanged.connect(self.handle_table_edit)
             return
 
 
@@ -853,6 +886,7 @@ class CSVViewer(QMainWindow):
                 continue
 
         self.display_data(filtered)
+        self.table.cellChanged.connect(self.handle_table_edit)
 
     def update_date_list(self):
         self.date_filter_menu.blockSignals(True)
@@ -920,6 +954,8 @@ class CSVViewer(QMainWindow):
         if file_path:
             try:
 
+                self.table.cellChanged.disconnect(self.handle_table_edit)
+
                 with open(file_path, encoding='utf-8-sig') as file:
                     reader = csv.DictReader(file, delimiter=';')
                     self.data = list(reader)
@@ -947,6 +983,8 @@ class CSVViewer(QMainWindow):
                 self.next_button.setEnabled(True)
                 self.print_button.setEnabled(True)
                 self.add_new_vuoro_button.setEnabled(True)
+
+                self.table.cellChanged.connect(self.handle_table_edit)
 
             except Exception as e:
                 QMessageBox.critical(self, "Error", f"Failed to open file:\n{e}")
