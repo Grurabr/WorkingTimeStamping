@@ -318,7 +318,7 @@ class CSVViewer(QMainWindow):
     def __init__(self):
         super().__init__()
 
-        self.username = "veera.tiainen@timaco.fi"
+        self.username = ""
 
         self.setWindowTitle("Working time stamping")
         self.setGeometry(100, 100, 1600, 700)
